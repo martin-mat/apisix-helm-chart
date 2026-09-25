@@ -43,6 +43,8 @@ jobs:
         with:
           # Pinned so a run is reproducible and a suite release is adopted on
           # purpose; bump it after checking the release notes.
-          version: v2.0.0
+          version: v2.1.0
           cnf_config: cnti-testsuite.yaml
+          log_level: info
+          install_timeout: 600
           tests: cert
