@@ -1,10 +1,10 @@
-# Values for the CNTi Test Suite run (.github/workflows/cnti.yml): resource
-# limits and a declared non-root user on the gateway (the image runs as
-# apisix, uid and gid 636), and the bundled etcd with the chart's three
-# members (one member cannot be scaled by adding pods, and draining it takes
-# the gateway down), a versioned image and its container security context on. The gateway Service keeps the
-# chart's NodePort: the template always sets externalTrafficPolicy, which
-# Kubernetes rejects on a ClusterIP Service.
+# Values for the CNTi Test Suite run (.github/workflows/cnti.yml): APISIX in
+# standalone mode (rules from a ConfigMap, no etcd), with resource limits and
+# a declared non-root user on the gateway (the image runs as apisix, uid and
+# gid 636). The bundled etcd is marked development-only by the chart and does
+# not survive scaling or a node drain; standalone is the single-cluster
+# profile. The gateway Service keeps the chart's NodePort: the template always
+# sets externalTrafficPolicy, which Kubernetes rejects on a ClusterIP Service.
 replicaCount: 1
 resources:
   requests: {cpu: 100m, memory: 256Mi}
@@ -14,8 +14,8 @@ securityContext:
   runAsUser: 636
   runAsGroup: 636
   allowPrivilegeEscalation: false
+apisix:
+  deployment:
+    mode: standalone
 etcd:
-  image:
-    tag: 3.5.21
-  containerSecurityContext:
-    enabled: true
+  enabled: false
