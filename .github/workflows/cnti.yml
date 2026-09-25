@@ -45,4 +45,6 @@ jobs:
           # purpose; bump it after checking the release notes.
           version: v2.0.0
           cnf_config: cnti-testsuite.yaml
+          log_level: info
+          install_timeout: 600
           tests: cert
