@@ -16,6 +16,8 @@ securityContext:
   allowPrivilegeEscalation: false
 apisix:
   deployment:
+    # Both are needed: mode alone still renders the traditional role on etcd.
     mode: standalone
+    role: data_plane
 etcd:
   enabled: false
