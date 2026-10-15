@@ -1,0 +1,161 @@
+#
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+# Installs the apisix chart on a kind cluster, runs the CNTi Test Suite's
+# essential tests against it, and publishes the result as the badge in the
+# README. Uses only GitHub's own actions and helm/kind-action at the commit the
+# ASF allow list approves; the suite is a released binary, checked against its
+# SHA-256.
+# https://github.com/lfn-cnti/testsuite
+name: CNTi essential
+
+on:
+  schedule:
+    - cron: "37 3 * * *"
+  workflow_dispatch:
+  # Pull requests that change the job or its configuration.
+  pull_request:
+    paths:
+      - .github/workflows/cnti.yml
+      - .github/cnti/**
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cnti-essential-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # A released suite version, bumped on purpose after reading the release notes.
+  CNTI_TESTSUITE_VERSION: v2.3.0
+  CNTI_TESTSUITE_SHA256: e93c4354a70f8674072e0f44bf3d339ea6636edc2ec74debaa126aa2a4043e01
+
+jobs:
+  # Runs on master (nightly or by hand): the only runs that publish the badge,
+  # and the only ones with a write token. Forks that enable scheduled workflows
+  # run neither job.
+  essential:
+    if: github.repository == 'apache/apisix-helm-chart' && github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      # Pushes the badge to the orphan branch `badges`.
+      contents: write
+    steps: &essential-steps
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # A control plane and two workers, so node_drain has somewhere to move APISIX.
+      - name: Write kind config
+        run: |
+          cat > "$RUNNER_TEMP/kind.yaml" <<'KIND'
+          kind: Cluster
+          apiVersion: kind.x-k8s.io/v1alpha4
+          nodes:
+            - role: control-plane
+            - role: worker
+            - role: worker
+          KIND
+
+      - name: Create kind cluster
+        uses: helm/kind-action@1544676c07bb3570fcb70166beaa07c4528fd4aa # v1.15.1
+        with:
+          cluster_name: cnti
+          config: ${{ runner.temp }}/kind.yaml
+
+      - name: Install the CNTi Test Suite
+        run: |
+          set -euo pipefail
+          url="https://github.com/lfn-cnti/testsuite/releases/download/${CNTI_TESTSUITE_VERSION}/cnti-testsuite-${CNTI_TESTSUITE_VERSION}.tar.gz"
+          curl --fail --silent --show-error -L "$url" -o "$RUNNER_TEMP/cnti-testsuite.tar.gz"
+          echo "${CNTI_TESTSUITE_SHA256}  $RUNNER_TEMP/cnti-testsuite.tar.gz" | sha256sum --check
+          mkdir -p "$RUNNER_TEMP/cnti"
+          tar -C "$RUNNER_TEMP/cnti" -xf "$RUNNER_TEMP/cnti-testsuite.tar.gz"
+          echo "$RUNNER_TEMP/cnti" >> "$GITHUB_PATH"
+
+      - name: Build chart dependencies
+        run: |
+          helm repo add bitnami https://charts.bitnami.com/bitnami
+          helm repo add apisix https://apache.github.io/apisix-helm-chart
+          helm dependency build charts/apisix
+
+      - name: Install apisix
+        run: |
+          cnti-testsuite setup
+          cnti-testsuite cnf_install --cnf-config .github/cnti/cnti-testsuite.yaml --timeout 600
+
+      # `cert` runs the 19 essential tests; 15 is the pass mark. A non-zero exit
+      # is the verdict here, judged after the badge is written.
+      - name: Run the essential tests
+        id: run
+        run: |
+          set +e
+          cnti-testsuite cert
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Write the badge
+        if: always() && steps.run.outputs.exit_code != ''
+        run: cnti-testsuite evidence --output-dir cnti/evidence
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cnti-results
+          path: cnti/
+          if-no-files-found: ignore
+
+      # The badge the README shows: always the latest run of master, on an orphan
+      # branch so it never touches the chart's history. Runs on pull requests and
+      # other branches publish nothing.
+      - name: Publish the badge
+        if: always() && github.event_name != 'pull_request' && github.ref == 'refs/heads/master' && hashFiles('cnti/evidence/cnti-badge.svg') != '' && (steps.run.outputs.exit_code == '0' || steps.run.outputs.exit_code == '1')
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          work=$(mktemp -d)
+          cp cnti/evidence/cnti-badge.svg cnti/evidence/cnti-badge.json "$work"/
+          cd "$work"
+          git init -q -b badges
+          git add cnti-badge.svg cnti-badge.json
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -q -m "CNTi badge: $(jq -r '.label + " " + .message' cnti-badge.json) (${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})"
+          git push -q -f "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:refs/heads/badges
+
+      - name: Verdict
+        if: always()
+        env:
+          RC: ${{ steps.run.outputs.exit_code }}
+        run: |
+          case "$RC" in
+            0) echo "Passed the essential tests" ;;
+            1) echo "::error::Below the pass mark of the essential tests"; exit 1 ;;
+            *) echo "::error::The essential tests did not complete (exit code ${RC:-none})"; exit 1 ;;
+          esac
+
+  # Pull requests that change the job or its configuration, and manual runs on
+  # other branches: the same steps with a read-only token, publishing nothing.
+  essential-pr:
+    if: github.repository == 'apache/apisix-helm-chart' && (github.event_name == 'pull_request' || github.ref != 'refs/heads/master')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps: *essential-steps

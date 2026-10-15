@@ -19,6 +19,8 @@
 
 # Apache APISIX Helm Charts
 
+[![CNTi essential](https://raw.githubusercontent.com/apache/apisix-helm-chart/badges/cnti-badge.svg)](https://github.com/apache/apisix-helm-chart/actions/workflows/cnti.yml)
+
 Apache APISIX Helm Charts provide the installation of [Apache APISIX](https://github.com/apache/apisix#apache-apisix) components for kubernetes.
 
 - [Apache APISIX Helm Chart](./docs/en/latest/apisix.md)
