@@ -1,7 +1,7 @@
 name: CNTi chart defaults
 on:
   push:
-    branches: [cnti-defaults]
+    branches: [cnti-defaults, cnti-liveness]
 permissions:
   contents: read
 jobs:

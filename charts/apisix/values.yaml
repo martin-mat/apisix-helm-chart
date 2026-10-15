@@ -469,6 +469,18 @@ apisix:
     # ref: https://apisix.apache.org/docs/apisix/deployment-modes/
     mode: traditional
 
+    # -- Liveness probe of the APISIX container, so Kubernetes restarts a gateway
+    # that has stopped serving instead of only taking it out of the endpoints.
+    # It checks the same port as the readiness probe (`/status` on the status
+    # port when that is served), with a longer delay and the same tolerance.
+    livenessProbe:
+      enabled: true
+      initialDelaySeconds: 30
+      periodSeconds: 10
+      timeoutSeconds: 1
+      failureThreshold: 6
+      successThreshold: 1
+
     # -- Deployment role
     # Optional: traditional, data_plane, control_plane
     #
