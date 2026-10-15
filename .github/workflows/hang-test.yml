@@ -10,14 +10,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: standalone (tcpSocket)
+          - name: standalone (httpGet /status)
             values: --set apisix.deployment.mode=standalone --set etcd.enabled=false
-          - name: traditional, yaml provider (httpGet /status)
-            values: --set apisix.deployment.role_traditional.config_provider=yaml --set etcd.enabled=false
-          - name: chart default, etcd (tcpSocket)
+          - name: chart default, etcd (httpGet /status)
             values: ""
-          - name: traditional, yaml provider, probe off (baseline)
-            values: --set apisix.deployment.role_traditional.config_provider=yaml --set etcd.enabled=false --set apisix.deployment.livenessProbe.enabled=false
     name: ${{ matrix.name }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
