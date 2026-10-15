@@ -1,0 +1,24 @@
+name: CNTi chart defaults
+on:
+  push:
+    branches: [cnti-defaults, cnti-liveness, cnti-liveness-pr]
+permissions:
+  contents: read
+jobs:
+  cert:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build chart dependencies
+        run: |
+          helm repo add bitnami https://charts.bitnami.com/bitnami
+          helm repo add apisix https://apache.github.io/apisix-helm-chart
+          helm dependency build charts/apisix
+      - uses: lfn-cnti/testsuite-action@v1
+        with:
+          version: v2.2.0
+          cnf_config: cnti-testsuite.yaml
+          log_level: info
+          install_timeout: 600
+          tests: cert

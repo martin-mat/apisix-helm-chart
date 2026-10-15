@@ -1,0 +1,9 @@
+---
+# CNTi Test Suite: the APISIX chart on its defaults, in standalone mode.
+config_version: "v2"
+deployments:
+  helm_dirs:
+    - name: apisix
+      helm_directory: charts/apisix
+      namespace: apisix-cnti
+      helm_values: --values ci/cnti-values.yaml
