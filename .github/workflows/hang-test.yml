@@ -16,9 +16,11 @@ jobs:
             values: --set apisix.deployment.role_traditional.config_provider=yaml --set etcd.enabled=false
           - name: chart default, etcd (tcpSocket)
             values: ""
+          - name: traditional, yaml provider, probe off (baseline)
+            values: --set apisix.deployment.role_traditional.config_provider=yaml --set etcd.enabled=false --set apisix.deployment.livenessProbe.enabled=false
     name: ${{ matrix.name }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: helm/kind-action@v1.15.0
@@ -27,7 +29,13 @@ jobs:
           helm repo add bitnami https://charts.bitnami.com/bitnami
           helm repo add apisix https://apache.github.io/apisix-helm-chart
           helm dependency build charts/apisix
-          helm install apisix charts/apisix -n apisix --create-namespace ${{ matrix.values }} --wait --timeout 10m
+          if ! helm install apisix charts/apisix -n apisix --create-namespace ${{ matrix.values }} --wait --timeout 6m; then
+            kubectl -n apisix get pods -o wide
+            kubectl -n apisix describe pods -l app.kubernetes.io/name=apisix | tail -40
+            kubectl -n apisix logs -l app.kubernetes.io/name=apisix --tail=40 --all-containers || true
+            kubectl -n apisix logs -l app.kubernetes.io/name=apisix --tail=40 --previous || true
+            exit 1
+          fi
           kubectl -n apisix get pods -o wide
           kubectl -n apisix get deploy apisix -o jsonpath='{.spec.template.spec.containers[0].livenessProbe}'; echo
       - name: Healthy for three minutes, no restart
@@ -37,12 +45,14 @@ jobs:
       - name: Freeze the workers (SIGSTOP), then watch for a restart
         run: |
           pod=$(kubectl -n apisix get pods -l app.kubernetes.io/name=apisix -o jsonpath='{.items[0].metadata.name}')
-          kubectl -n apisix exec $pod -c apisix -- sh -c 'for d in /proc/[0-9]*; do c=$(tr "\0" " " < $d/cmdline 2>/dev/null); case "$c" in *"nginx: worker"*|*"nginx: privileged agent"*) echo "STOP ${d#/proc/} $c"; kill -STOP ${d#/proc/};; esac; done'
+          # Only processes whose command line starts with "nginx: " (openresty
+          # renames its workers); never this shell, whose own text names them.
+          timeout 30 kubectl -n apisix exec $pod -c apisix -- sh -c 'for d in /proc/[0-9]*; do p=${d#/proc/}; [ "$p" = "$$" ] && continue; c=$(tr "\0" " " < $d/cmdline 2>/dev/null); case "$c" in "nginx: worker"*|"nginx: privileged agent"*) echo "STOP $p $c"; kill -STOP $p;; esac; done'
           start=$(date +%s)
-          kubectl -n apisix exec $pod -c apisix -- sh -c 'timeout 5 sh -c "exec 3<>/dev/tcp/127.0.0.1/9080" && echo "tcp 9080 connect ok" || echo "tcp 9080 connect failed"' || true
           for i in $(seq 1 30); do
             r=$(kubectl -n apisix get pod $pod -o jsonpath='{.status.containerStatuses[0].restartCount}')
             if [ "$r" -ge 1 ]; then echo "RESTARTED after $(( $(date +%s) - start ))s"; kubectl -n apisix get events --field-selector involvedObject.name=$pod | grep -i -E "liveness|killing|unhealthy" | tail -5; exit 0; fi
             sleep 10
           done
-          echo "NO RESTART within 300s"; kubectl -n apisix get events --field-selector involvedObject.name=$pod | tail -8
+          echo "NO RESTART within 300s"
+          timeout 10 kubectl -n apisix exec $pod -c apisix -- sh -c 'curl -s -m 3 -o /dev/null -w "http 9080: %{http_code}\n" http://127.0.0.1:9080/ || echo "http 9080: no answer"' || echo "exec timed out"; kubectl -n apisix get events --field-selector involvedObject.name=$pod | tail -8
