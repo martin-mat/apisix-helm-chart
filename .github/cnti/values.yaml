@@ -17,6 +17,7 @@
 
 # Standalone mode: the gateway reads its routes from a file, so the run tests
 # APISIX itself without an etcd cluster. Everything else is the chart's default.
+# (fork test: a change under .github/cnti/ triggers the read-only job)
 apisix:
   deployment:
     mode: standalone
