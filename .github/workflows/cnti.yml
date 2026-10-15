@@ -50,7 +50,7 @@ jobs:
   # and the only ones with a write token. Forks that enable scheduled workflows
   # run neither job.
   essential:
-    if: github.repository == 'apache/apisix-helm-chart' && github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
+    if: github.repository == 'martin-mat/apisix-helm-chart' && github.event_name != 'pull_request' && github.ref == 'refs/heads/cnti-badge-test'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -125,7 +125,7 @@ jobs:
       # branch so it never touches the chart's history. Runs on pull requests and
       # other branches publish nothing.
       - name: Publish the badge
-        if: always() && github.event_name != 'pull_request' && github.ref == 'refs/heads/master' && hashFiles('cnti/evidence/cnti-badge.svg') != '' && (steps.run.outputs.exit_code == '0' || steps.run.outputs.exit_code == '1')
+        if: always() && github.event_name != 'pull_request' && github.ref == 'refs/heads/cnti-badge-test' && hashFiles('cnti/evidence/cnti-badge.svg') != '' && (steps.run.outputs.exit_code == '0' || steps.run.outputs.exit_code == '1')
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
@@ -153,7 +153,7 @@ jobs:
   # Pull requests that change the job or its configuration, and manual runs on
   # other branches: the same steps with a read-only token, publishing nothing.
   essential-pr:
-    if: github.repository == 'apache/apisix-helm-chart' && (github.event_name == 'pull_request' || github.ref != 'refs/heads/master')
+    if: github.repository == 'martin-mat/apisix-helm-chart' && (github.event_name == 'pull_request' || github.ref != 'refs/heads/cnti-badge-test')
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
