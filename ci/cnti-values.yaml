@@ -1,0 +1,7 @@
+# Scope: standalone mode, the gateway configured from a file, without etcd.
+# The data_plane role follows from standalone mode since #1017.
+apisix:
+  deployment:
+    mode: standalone
+etcd:
+  enabled: false
