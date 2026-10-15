@@ -185,6 +185,24 @@ spec:
               port: {{ .Values.service.http.containerPort }}
             {{- end}}
             timeoutSeconds: 1
+          {{- with .Values.apisix.deployment.livenessProbe }}
+          {{- if .enabled }}
+          livenessProbe:
+            failureThreshold: {{ .failureThreshold }}
+            initialDelaySeconds: {{ .initialDelaySeconds }}
+            periodSeconds: {{ .periodSeconds }}
+            successThreshold: {{ .successThreshold }}
+            {{- if $useTraditionalYaml }}
+            httpGet:
+              path: /status
+              port: {{ default 7085 $.Values.apisix.status.port }}
+            {{- else }}
+            tcpSocket:
+              port: {{ $.Values.service.http.containerPort }}
+            {{- end }}
+            timeoutSeconds: {{ .timeoutSeconds }}
+          {{- end }}
+          {{- end }}
           {{- end }}
           {{- with .Values.lifecycle }}
           lifecycle:
