@@ -1,0 +1,56 @@
+# Fork-only: APISIX from master and with serviceAccount.create true, side by
+# side, with the CNTi badge config (standalone): the essential tests and
+# dedicated_service_account, who the pods run as, and a request through the
+# gateway.
+name: Verify the default ServiceAccount
+on:
+  push:
+    branches: [verify-dsa]
+permissions:
+  contents: read
+jobs:
+  cnti:
+    strategy:
+      fail-fast: false
+      matrix:
+        ref: [upstream-master, fix]
+    name: ${{ matrix.ref }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Chart from ${{ matrix.ref }}, CNTi config from the badge branch
+        run: |
+          set -euo pipefail
+          git fetch -q origin ci/cnti-essential
+          git checkout -q FETCH_HEAD -- .github/cnti
+          if [ "${{ matrix.ref }}" = upstream-master ]; then
+            git remote add upstream https://github.com/apache/apisix-helm-chart.git
+            git fetch -q upstream master
+            git checkout -q upstream/master -- charts
+          fi
+          grep -n -A2 "^serviceAccount:" charts/apisix/values.yaml
+          helm repo add bitnami https://charts.bitnami.com/bitnami >/dev/null
+          helm repo add apisix https://apache.github.io/apisix-helm-chart >/dev/null
+          helm dependency build charts/apisix >/dev/null
+      - uses: lfn-cnti/testsuite-action@70536fda55fcb11f4f7463175fe9d57c86b85574 # v1.2.0
+        with:
+          version: v2.3.0
+          cnf_config: .github/cnti/cnti-testsuite.yaml
+          tests: cert dedicated_service_account
+          fail_on_failure: "false"
+          artifact_name: results-${{ matrix.ref }}
+      - name: Who the pods run as, and a request through the gateway
+        if: always()
+        run: |
+          set +e
+          ns=apisix-cnti
+          kubectl -n $ns get sa
+          kubectl -n $ns get pods -o custom-columns='POD:.metadata.name,READY:.status.containerStatuses[*].ready,SA:.spec.serviceAccountName'
+          sa=$(kubectl -n $ns get deploy apisix -o jsonpath='{.spec.template.spec.serviceAccountName}'); sa=${sa:-default}
+          printf "can %s list endpoints cluster-wide? " "$sa"; kubectl auth can-i list endpoints --all-namespaces --as=system:serviceaccount:$ns:$sa
+          kubectl -n $ns port-forward svc/apisix-gateway 9080:80 >/dev/null 2>&1 &
+          sleep 5
+          echo "gateway answers: $(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:9080/no-such-route) $(curl -s http://127.0.0.1:9080/no-such-route | head -c 120)"
